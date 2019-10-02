@@ -1,0 +1,17 @@
+jobs:
+  rules:
+    container-mapper-rules.yml: |
+      mappings:
+	- tool_ids:
+	    - sort1
+	    - Grouping1
+	  container:
+	    docker_container_id_override: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+persistence:
+  storageClass: nfs-provisioner
+postgresql:
+  persistence:
+    storageClass: ebs-provisioner
+ingress:
+  path: /galaxy
+
