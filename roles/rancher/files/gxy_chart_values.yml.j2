@@ -2,16 +2,84 @@ jobs:
   rules:
     container-mapper-rules.yml: |
       mappings:
-	- tool_ids:
-	    - sort1
-	    - Grouping1
-	  container:
-	    docker_container_id_override: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        - tool_ids:
+            - sort1
+            - Grouping1
+          container:
+            docker_container_id_override: {{ .Values.image.repository }}:{{ .Values.image.tag }}
 persistence:
   storageClass: nfs-provisioner
+ingress:
+  path: /galaxy
+configs:
+  job_conf.xml: |
+    <job_conf>
+        <plugins>
+            <plugin id="local" type="runner" load="galaxy.jobs.runners.local:LocalJobRunner" workers="4" />
+            <plugin id="k8s" type="runner" load="galaxy.jobs.runners.kubernetes:KubernetesJobRunner">
+              <param id="k8s_use_service_account">true</param>
+              <param id="k8s_persistent_volume_claims">{{ template "galaxy.pvcname" . }}:{{.Values.persistence.mountPath}},{{ template "galaxy.fullname" . }}-cvmfs-gxy-data-pvc:{{ .Values.cvmfs.data.mountPath }},{{ template "galaxy.fullname" . }}-cvmfs-gxy-main-pvc:{{ .Values.cvmfs.main.mountPath }}</param>
+              <param id="k8s_namespace">{{ .Release.Namespace }}</param>
+              <!-- Must be DNS friendly and less than 20 characters -->
+              <param id="k8s_galaxy_instance_id">{{ .Release.Name }}</param>
+              <param id="k8s_run_as_user_id">101</param>
+              <param id="k8s_run_as_group_id">101</param>
+              <param id="k8s_fs_group_id">101</param>
+              <param id="k8s_supplemental_group_id">101</param>
+              <param id="k8s_pull_policy">IfNotPresent</param>
+              <param id="k8s_cleanup_job">onsuccess</param>
+            </plugin>
+        </plugins>
+        <handlers assign_with="db-skip-locked" />
+        <destinations default="dynamic-k8s-dispatcher">
+            <destination id="local" runner="local"/>
+            <destination id="dynamic-k8s-dispatcher" runner="dynamic">
+              <param id="type">python</param>
+              <param id="function">k8s_container_mapper</param>
+              <param id="docker_default_container_id">{{ .Values.image.repository }}:{{ .Values.image.tag }}</param>
+              <param id="docker_enabled">true</param>
+            </destination>
+        </destinations>
+    </job_conf>
+  galaxy.yml: |
+    uwsgi:
+      virtualenv: /galaxy/server/.venv
+      processes: 1
+      http: 0.0.0.0:8080
+      static-map: /static/style=/galaxy/server/static/style/blue
+      static-map: /static=/galaxy/server/static
+      static-map: /favicon.ico=/galaxy/server/static/favicon.ico
+      pythonpath: /galaxy/server/lib
+      thunder-lock: true
+      manage-script-name: true
+      mount: {{.Values.ingress.path}}=galaxy.webapps.galaxy.buildapp:uwsgi_app()
+      buffer-size: 16384
+      offload-threads: 2
+      threads: 4
+      die-on-term: true
+      master: true
+      hook-master-start: unix_signal:2 gracefully_kill_them_all
+      enable-threads: true
+      py-call-osafterfork: true
+    galaxy:
+      database_connection: 'postgresql://{{.Values.postgresql.galaxyDatabaseUser}}:{{.Values.postgresql.galaxyDatabasePassword}}@{{ template "galaxy-postgresql.fullname" . }}/galaxy'
+      integrated_tool_panel_config: "/galaxy/server/config/mutable/integrated_tool_panel.xml"
+      sanitize_whitelist_file: "/galaxy/server/config/mutable/sanitize_whitelist.txt"
+      tool_config_file: "{{.Values.persistence.mountPath}}/config/editable_shed_tool_conf.xml,/galaxy/server/config/tool_conf.xml,{{ .Values.cvmfs.main.mountPath }}/config/shed_tool_conf.xml"
+      tool_data_table_config_path: "{{ .Values.cvmfs.main.mountPath }}/config/shed_tool_data_table_conf.xml,{{.Values.cvmfs.data.mountPath}}/managed/location/tool_data_table_conf.xml,{{.Values.cvmfs.data.mountPath}}/byhand/location/tool_data_table_conf.xml"
+      tool_dependency_dir: "{{.Values.persistence.mountPath}}/deps"
+      builds_file_path: "{{.Values.cvmfs.data.mountPath}}/managed/location/builds.txt"
+      datatypes_config_file: "{{ .Values.cvmfs.main.mountPath }}/config/datatypes_conf.xml"
+      containers_resolvers_config_file: "/galaxy/server/config/container_resolvers_conf.xml"
+      workflow_schedulers_config_file: "/galaxy/server/config/workflow_schedulers_conf.xml"
+      build_sites_config_file: "/galaxy/server/config/build_sites.yml"
+      admin_users: mo@email.com,alex@email.com
+  container_resolvers_conf.xml: |
+    <containers_resolvers>
+      <explicit />
+      <mulled />
+      <build_mulled />
+    </containers_resolvers>
 postgresql:
   persistence:
     storageClass: ebs-provisioner
-ingress:
-  path: /galaxy
-

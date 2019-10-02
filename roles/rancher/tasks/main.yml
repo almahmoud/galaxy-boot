@@ -552,7 +552,11 @@
     src: gxy_chart_values.yml.j2
     dest: /tmp/gxy_chart_values.yml
 
-- name: Helm install CloudMan
+- name: Helm install CVMFS-CSI
+  command: >
+    /usr/local/bin/helm install galaxyproject/galaxy-cvmfs-csi --namespace=cvmfs
+
+- name: Helm install Galaxy
   command: >
     /usr/local/bin/helm install galaxyproject/galaxy
     -f /tmp/gxy_chart_values.yml
