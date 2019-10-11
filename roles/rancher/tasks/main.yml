@@ -558,8 +558,7 @@
 
 - name: Helm install Galaxy
   command: >
-    /usr/local/bin/helm install galaxyproject/galaxy
-    -f /tmp/gxy_chart_values.yml
+    /usr/local/bin/helm install galaxyproject/galaxy -f /tmp/gxy_chart_values.yml --namespace=galaxy
 
 - name: Wait for Galaxy to become accessible
   uri:
